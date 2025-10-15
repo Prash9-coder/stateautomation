@@ -39,8 +39,8 @@ class PageRange(BaseModel):
 class BankStatement(BaseModel):
     header: Header
     transactions: List[Transaction]
-    original_page_ranges: List[PageRange] = []
-    extra_columns: Dict[str, List[Any]] = {}
+    original_page_ranges: List[PageRange] = Field(default_factory=list)
+    extra_columns: Dict[str, List[Any]] = Field(default_factory=dict)
     opening_balance: float = 0.0
     closing_balance: float = 0.0
     total_credits: float = 0.0

@@ -1,7 +1,6 @@
 from datetime import date, timedelta
 from typing import List
 from models.statement_schema import Transaction
-import numpy as np
 
 class DateSequencer:
     @staticmethod

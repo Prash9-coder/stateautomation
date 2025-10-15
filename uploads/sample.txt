@@ -1,0 +1,7 @@
+Bank: Sample Bank
+Account Holder: John Doe
+Account Number: 123456789
+IFSC: SBIN0001234
+Opening Balance: 1000.00
+2024-01-01 Salary Credit 1000.00 0.00 2000.00
+2024-01-05 ATM Withdrawal 0.00 200.00 1800.00

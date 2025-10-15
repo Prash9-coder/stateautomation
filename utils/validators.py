@@ -6,7 +6,12 @@ import re
 from datetime import date, datetime
 from typing import Optional, Tuple
 from pathlib import Path
-import magic  # python-magic for file type detection
+
+# Make python-magic optional to support environments where it's unavailable
+try:
+    import magic  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    magic = None  # type: ignore
 
 class ValidationError(Exception):
     """Custom exception for validation errors"""
@@ -35,27 +40,27 @@ def validate_file_upload(file_path: str, max_size_mb: int = 50) -> Tuple[bool, s
     if file_size_mb > max_size_mb:
         return False, f"File size ({file_size_mb:.2f}MB) exceeds limit ({max_size_mb}MB)"
     
-    # Check file extension
-    allowed_extensions = {'.pdf', '.docx'}
+    # Check file extension (allow .txt for simple raw text parsing)
+    allowed_extensions = {'.pdf', '.docx', '.txt'}
     if path.suffix.lower() not in allowed_extensions:
         return False, f"File type {path.suffix} not allowed. Use PDF or DOCX"
     
-    # Validate actual file type (not just extension)
-    try:
-        mime = magic.Magic(mime=True)
-        file_type = mime.from_file(str(path))
-        
-        allowed_mimes = {
-            'application/pdf',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/msword'
-        }
-        
-        if file_type not in allowed_mimes:
-            return False, f"Invalid file type: {file_type}"
-    except Exception as e:
-        # If magic fails, rely on extension check
-        pass
+    # Validate actual file type (not just extension) if python-magic is available
+    if magic is not None:
+        try:
+            mime = magic.Magic(mime=True)
+            file_type = mime.from_file(str(path))
+            allowed_mimes = {
+                'application/pdf',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/msword',
+                'text/plain'
+            }
+            if file_type not in allowed_mimes:
+                return False, f"Invalid file type: {file_type}"
+        except Exception:
+            # If magic check fails, rely on extension check above
+            pass
     
     return True, "File is valid"
 

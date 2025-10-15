@@ -22,6 +22,7 @@ try:
     from models.statement_schema import EditRequest, BankStatement
     from utils.audit_logger import AuditLogger
     from config.settings import settings
+    from utils.validators import validate_file_upload, validate_edit_request
     IMPORTS_OK = True
 except Exception as e:
     print(f"Warning: Some imports failed: {e}")
@@ -128,9 +129,9 @@ async def upload_statement(file: UploadFile = File(...)):
     if not IMPORTS_OK:
         raise HTTPException(500, "Server modules not properly loaded. Check installation.")
     
-    # Validate file type
-    if not file.filename.endswith(('.pdf', '.docx')):
-        raise HTTPException(400, "Only PDF and DOCX files are supported")
+    # Validate file type (allow .pdf, .docx, and .txt for dev/testing)
+    if not file.filename.endswith(('.pdf', '.docx', '.txt')):
+        raise HTTPException(400, "Only PDF, DOCX, or TXT files are supported")
     
     # Save uploaded file
     file_path = UPLOAD_DIR / file.filename
@@ -139,13 +140,53 @@ async def upload_statement(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
     except Exception as e:
         raise HTTPException(500, f"Error saving file: {str(e)}")
+
+    # Validate saved file (size and mime if available)
+    try:
+        max_mb = int(getattr(settings, "MAX_FILE_SIZE", 50 * 1024 * 1024) / (1024 * 1024))
+        is_valid, msg = validate_file_upload(str(file_path), max_size_mb=max_mb)
+        if not is_valid:
+            if file_path.exists():
+                os.remove(file_path)
+            raise HTTPException(400, msg)
+    except Exception as e:
+        # If validation layer itself fails, clean up and report
+        if file_path.exists():
+            os.remove(file_path)
+        raise HTTPException(400, f"Validation failed: {str(e)}")
     
     # Parse based on file type
     try:
         if file.filename.endswith('.pdf'):
             parser = PDFParser()
-        else:
+        elif file.filename.endswith('.docx'):
             parser = DOCXParser()
+        else:  # .txt fallback for dev
+            raw_text = ""
+            try:
+                with open(file_path, 'r') as f:
+                    raw_text = f.read()
+            except Exception:
+                raw_text = ""
+            from models.statement_schema import BankStatement, Header, PageRange
+            from parsers.llm_extractor import LLMExtractor
+            extracted_data = LLMExtractor().extract_structured_data(raw_text)
+            statement = BankStatement(**extracted_data)
+            # Simulate single statement page
+            statement.original_page_ranges = [
+                PageRange(start=1, end=1, page_type="statement")
+            ]
+            # Short-circuit normal flow below
+            relevant_pages = PageDetector.filter_relevant_pages(statement.original_page_ranges)
+            statement.original_page_ranges = relevant_pages
+            statement = BalanceCalculator.recalculate(statement)
+            statement_id = file.filename.split('.')[0] + "_" + str(len(statements_db))
+            statements_db[statement_id] = statement
+            return JSONResponse({
+                "statement_id": statement_id,
+                "data": json.loads(statement.model_dump_json()),
+                "message": "Statement parsed successfully"
+            })
         
         statement = parser.parse(str(file_path))
         
@@ -184,6 +225,11 @@ async def edit_statement(statement_id: str, edit_request: EditRequest):
     audit_logger = AuditLogger(log_file=f"audit_{statement_id}.jsonl")
     
     try:
+        # Validate edit request with additional business rules
+        is_valid, msg = validate_edit_request(edit_request.model_dump())
+        if not is_valid:
+            raise HTTPException(400, msg)
+        
         # Edit header fields
         for field in ['account_holder', 'account_number', 'ifsc', 'micr', 'branch']:
             new_value = getattr(edit_request, field)

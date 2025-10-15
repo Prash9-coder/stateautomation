@@ -37,10 +37,11 @@ class AuditLogger:
     
     def get_summary(self) -> dict:
         """Get summary of all changes"""
+        # Use JSON mode to ensure datetime fields are serialized
         return {
             "total_changes": len(self.entries),
             "changes_by_type": self._count_by_type(),
-            "changes": [e.model_dump() for e in self.entries]
+            "changes": [e.model_dump(mode='json') for e in self.entries]
         }
     
     def _count_by_type(self) -> dict:
