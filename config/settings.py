@@ -2,8 +2,8 @@ from pydantic_settings import BaseSettings
 from typing import Optional
 
 class Settings(BaseSettings):
-    GROQ_API_KEY: str
-    GEMINI_API_KEY: str
+    GROQ_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
     LLM_PROVIDER: str = "groq"  # or "gemini"
     GROQ_MODEL: str = "mixtral-8x7b-32768"
     GEMINI_MODEL: str = "gemini-pro"
