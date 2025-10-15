@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Statement Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .main-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            padding: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .card {
+            border: none;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: bold;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        }
+
+        pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .spinner-border {
+            width: 1.5rem;
+            height: 1.5rem;
+        }
+
+        h1 {
+            color: #667eea;
+            font-weight: 700;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <h1 class="text-center mb-4">🏦 Bank Statement AI Editor</h1>
+        <p class="text-center text-muted mb-5">Upload, analyze, and edit bank statements with AI</p>
+
+        <!-- Upload Section -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">📤 Step 1: Upload Bank Statement</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="fileInput" class="form-label">Select PDF or DOCX file:</label>
+                    <input type="file" class="form-control" id="fileInput" accept=".pdf,.docx">
+                    <small class="form-text text-muted">Supported formats: PDF, DOCX (max 50MB)</small>
+                </div>
+                <button class="btn btn-primary btn-lg" onclick="uploadFile()">
+                    <span id="uploadBtnText">🚀 Parse Statement</span>
+                </button>
+                <div id="uploadStatus" class="mt-3"></div>
+            </div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="resultSection" style="display:none;">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">✅ Extracted Data</h5>
+                </div>
+                <div class="card-body">
+                    <div id="statementInfo" class="mb-3"></div>
+                    <div id="resultData"></div>
+                </div>
+            </div>
+
+            <!-- Actions Section -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">⚙️ Actions</h5>
+                </div>
+                <div class="card-body">
+                    <button class="btn btn-success me-2" onclick="exportPDF()">📄 Download PDF</button>
+                    <button class="btn btn-info me-2" onclick="exportDOCX()">📝 Download DOCX</button>
+                    <button class="btn btn-warning" onclick="viewAudit()">📋 View Audit Log</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let currentStatementId = null;
+        let statementData = null;
+
+        async function uploadFile() {
+            const fileInput = document.getElementById('fileInput');
+            const file = fileInput.files[0];
+
+            if (!file) {
+                alert('⚠️ Please select a file first');
+                return;
+            }
+
+            // Validate file type
+            const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            if (!validTypes.includes(file.type) && !file.name.match(/\.(pdf|docx)$/i)) {
+                alert('⚠️ Please select a valid PDF or DOCX file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // Show loading state
+            const uploadBtn = document.getElementById('uploadBtnText');
+            uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+            document.getElementById('uploadStatus').innerHTML =
+                '<div class="alert alert-info"><span class="spinner-border spinner-border-sm me-2"></span>Uploading and parsing statement... This may take a minute.</div>';
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    currentStatementId = result.statement_id;
+                    statementData = result.data;
+
+                    document.getElementById('uploadStatus').innerHTML =
+                        '<div class="alert alert-success">✅ ' + result.message + '<br><small>Statement ID: ' + result.statement_id + '</small></div>';
+
+                    displayResults(result.data);
+                    document.getElementById('resultSection').style.display = 'block';
+                } else {
+                    throw new Error(result.detail || 'Upload failed');
+                }
+            } catch (error) {
+                document.getElementById('uploadStatus').innerHTML =
+                    '<div class="alert alert-danger">❌ Error: ' + error.message + '</div>';
+                console.error('Upload error:', error);
+            } finally {
+                uploadBtn.innerHTML = '🚀 Parse Statement';
+            }
+        }
+
+        function displayResults(data) {
+            // Display header info
+            const header = data.header || {};
+            let infoHTML = '<div class="row">';
+            infoHTML += `<div class="col-md-6"><strong>Account Holder:</strong> ${header.account_holder || 'N/A'}</div>`;
+            infoHTML += `<div class="col-md-6"><strong>Account Number:</strong> ${header.account_number || 'N/A'}</div>`;
+            infoHTML += `<div class="col-md-4"><strong>IFSC:</strong> ${header.ifsc || 'N/A'}</div>`;
+            infoHTML += `<div class="col-md-4"><strong>Branch:</strong> ${header.branch || 'N/A'}</div>`;
+            infoHTML += `<div class="col-md-4"><strong>Bank:</strong> ${header.bank_name || 'N/A'}</div>`;
+            infoHTML += '</div>';
+            document.getElementById('statementInfo').innerHTML = infoHTML;
+
+            // Display transactions table
+            const transactions = data.transactions || [];
+            let tableHTML = '<div class="table-responsive"><table class="table table-striped table-hover">';
+            tableHTML += '<thead class="table-dark"><tr><th>Date</th><th>Description</th><th>Credit</th><th>Debit</th><th>Balance</th></tr></thead><tbody>';
+
+            transactions.forEach(txn => {
+                tableHTML += `<tr>
+                    <td>${txn.date}</td>
+                    <td>${txn.description}</td>
+                    <td class="text-success">₹${txn.credit.toFixed(2)}</td>
+                    <td class="text-danger">₹${txn.debit.toFixed(2)}</td>
+                    <td><strong>₹${txn.balance.toFixed(2)}</strong></td>
+                </tr>`;
+            });
+
+            tableHTML += '</tbody></table></div>';
+
+            // Summary
+            tableHTML += `<div class="alert alert-info">
+                <strong>Summary:</strong> 
+                Total Credits: ₹${data.total_credits.toFixed(2)} | 
+                Total Debits: ₹${data.total_debits.toFixed(2)} | 
+                Closing Balance: ₹${data.closing_balance.toFixed(2)}
+            </div>`;
+
+            document.getElementById('resultData').innerHTML = tableHTML;
+        }
+
+        async function exportPDF() {
+            if (!currentStatementId) {
+                alert('⚠️ No statement loaded');
+                return;
+            }
+            window.location.href = `/export/${currentStatementId}?format=pdf`;
+        }
+
+        async function exportDOCX() {
+            if (!currentStatementId) {
+                alert('⚠️ No statement loaded');
+                return;
+            }
+            window.location.href = `/export/${currentStatementId}?format=docx`;
+        }
+
+        async function viewAudit() {
+            if (!currentStatementId) {
+                alert('⚠️ No statement loaded');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/audit/${currentStatementId}`);
+                const result = await response.json();
+
+                alert('Audit Log:\n\n' + JSON.stringify(result, null, 2));
+            } catch (error) {
+                alert('❌ Error loading audit log: ' + error.message);
+            }
+        }
+
+        // File input change handler
+        document.getElementById('fileInput').addEventListener('change', function (e) {
+            const fileName = e.target.files[0]?.name;
+            if (fileName) {
+                console.log('Selected file:', fileName);
+            }
+        });
+    </script>
+</body>
+
+</html>
